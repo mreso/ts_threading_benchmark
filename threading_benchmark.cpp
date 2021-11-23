@@ -110,8 +110,8 @@ int main(const int argc, const char* const argv[]) {
     ITER_NUM = std::stoul(argv[1]);
     const size_t THREAD_NUM = std::stoul(argv[2]);
 
-    // at::set_num_interop_threads(1);
-    // at::set_num_threads(1); 
+    at::set_num_interop_threads(1);
+    at::set_num_threads(1); 
 
     cout << "Inter-op threads:" << at::get_num_interop_threads() << endl;
     cout << "Intra-op threads:" << at::get_num_threads() << endl; 
@@ -129,7 +129,9 @@ int main(const int argc, const char* const argv[]) {
     move_to_cuda_if_available(kwargs);
 
     // Torch script
-    vector<torch::jit::Module> traced;
+    torch::jit::Module traced  = torch::jit::load("../models/bert_model_only_traced.pt");
+
+    traced.eval();
 
     chrono::steady_clock::time_point begin;
 
@@ -139,23 +141,18 @@ int main(const int argc, const char* const argv[]) {
     // vector<Worker> worker;
     vector<thread> worker_threads;
 
-    for(int i=0; i<THREAD_NUM; ++i) {
-        traced.push_back(torch::jit::load("../models/bert_model_only_traced.pt"));
-        traced.back().eval();
+    auto ret = traced.forward({}, kwargs).toIValue().toTuple()->elements()[0];
+    float paraphrased_percent = 100.0 * torch::softmax(ret.toTensor(),1)[0][1].item<float>();
+    cout << round(paraphrased_percent) << "% paraphrase" << endl;
 
-        auto ret = traced.back().forward({}, kwargs).toIValue().toTuple()->elements()[0];
-        float paraphrased_percent = 100.0 * torch::softmax(ret.toTensor(),1)[0][1].item<float>();
-        cout << round(paraphrased_percent) << "% paraphrase" << endl;
-
-        // Warm-up
-        for(size_t i=0; i<WARM_UPS; ++i){
-            auto ret = traced.back().forward({}, kwargs).toIValue().toTuple()->elements()[0];
-        }
+    // Warm-up
+    for(size_t i=0; i<WARM_UPS; ++i){
+        auto ret = traced.forward({}, kwargs).toIValue().toTuple()->elements()[0];
     }
 
     begin = chrono::steady_clock::now();
     for(int i=0; i<THREAD_NUM; ++i)
-        worker_threads.emplace_back(&Worker::do_work, TorchScriptWorker(i, queue, mtx, traced[i]));
+        worker_threads.emplace_back(&Worker::do_work, TorchScriptWorker(i, queue, mtx, traced));
     
     for(auto &t : worker_threads)
         t.join();

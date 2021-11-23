@@ -30,7 +30,7 @@
     $ make
 
     $ OMP_NUM_THREADS=1 ./benchmark 10000 1
-    $ OMP_NUM_THREADS=1 ./benchmark 10000 2q
+    $ OMP_NUM_THREADS=1 ./benchmark 10000 2
 
 
 
